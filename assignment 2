@@ -1,0 +1,237 @@
+import ddf.minim.*;
+import ddf.minim.analysis.*;
+
+//audio stuff
+Minim minim;
+AudioPlayer song;
+FFT fft;
+AudioMetaData meta;
+AudioInput input;
+BeatDetect beat;
+BeatListener bl; 
+
+int r = 200;
+float radius = 70;
+int t = 0;
+float cbright = 20;
+float cdiameter;
+float totaldiameter;
+int colordelta = 20; //bigger numbers go slower
+int colordeltacount = 0;
+
+//big dot color
+float primaryColor = 12;
+//fuzz color
+float secondColor = 20;
+///////////////////////////////////////////////setup///////////////////////////////////////////
+void setup(){
+ size(1024, 750, P2D);
+ totaldiameter = cdiameter = sqrt(2) * width / 2;
+ 
+ minim = new Minim(this);
+ song = minim.loadFile("cake- comfort eagle.mp3", 1024);
+ meta = song.getMetaData();
+ song.play();
+ 
+ //beat detection
+ fft = new FFT(song.bufferSize(), song.sampleRate());
+ input = minim.getLineIn();
+ beat = new BeatDetect(song.bufferSize(), song.sampleRate());
+ beat.setSensitivity(200);
+ bl = new BeatListener(beat, song);
+ 
+ textMode(SCREEN);
+  
+}
+/////////////////////////////////////////////globals//////////////////////////////////////
+int ys = 15;
+int yi = 15;
+///////////////////////////////////////////////////draw/////////////////////////////////////////////////
+void draw() {
+ //int y = ys;
+ background(0);
+ colorMode(HSB, 360, 100, 60);
+ //hue sturation brightness
+ 
+ //switch to this once code is transfered over to centered mode
+ translate(width/2, height/2);
+ 
+ 
+ //wtf is this doing??
+ float t2 = map(mouseX, 0, width, 0, 1);
+ beat.detect(song.mix);
+ fill(100, 0, 10);
+ //noFill();
+ //fill(-1, 10);
+ if (beat.isOnset()){ 
+   radius = radius*0.9;
+ }else {
+   radius = 90;
+  ellipse(0, 0, 2*radius, 2*radius);
+ }
+ 
+  int bsize = song.bufferSize();
+  for (int i = 0; i < bsize - 1; i+=5)
+  {
+    float x = (r)*cos(i*2*PI/bsize);
+    float y = (r)*sin(i*2*PI/bsize);
+    float x2 = (r + song.left.get(i)*100)*cos(i*2*PI/bsize);
+    float y2 = (r + song.left.get(i)*100)*sin(i*2*PI/bsize);
+    line(x, y, x2, y2);
+  }
+ 
+ 
+ 
+ 
+ 
+ if (beat.isKick()){
+  //small lines of dots
+  cdiameter = totaldiameter*118;
+ }
+ 
+ if (beat.isSnare()){
+  //affects color change of large dots on snare
+  cbright = 60;
+  if (colordeltacount == 0) {
+    primaryColor = (primaryColor + 200.0) % 360;
+    secondColor = (primaryColor + 180.0) % 360;    
+  }
+  colordeltacount = (colordeltacount +1) % colordelta;
+ }
+ 
+ //draw recursive bg circles
+ fill(primaryColor, 0, cbright);
+ noStroke();
+ 
+ for (int i = 0; i<360; i += 30){
+   circleToCenter(radians(i), cdiameter, cdiameter, 70, false);
+ }
+ 
+ symmetrizedDotPattern(song.left.toArray(), song.left.size());
+ 
+  t = (t + 1) % 36000;
+  cdiameter = constrain(cdiameter * 1.01, totaldiameter * 0.8, totaldiameter);
+  cbright = constrain(cbright * 0.98, 0, 2000);
+ 
+ fft.forward(song.mix);
+ 
+ //////////////////////////////pillars
+ stroke (290, 100, 43);
+ strokeWeight(4);
+ for (int i =0; i<fft.specSize(); i++){
+  line(i*10, height/2, i*10, height/2- fft.getBand(i)*6);    
+  line(-i*10, height/2, -i*10, height/2- fft.getBand(i)*6);
+ }
+ 
+ stroke (290, 100, 43);
+ strokeWeight(4);
+ for (int i =0; i<fft.specSize(); i++){
+  line(i*10, -375, i*10,  -375+fft.getBand(i)*6);    
+  line(-i*10, -375, -i*10, -375+ fft.getBand(i)*6);
+ }
+ 
+
+ 
+ 
+ ///////////////////////////////bands
+ stroke(255);
+ strokeWeight(1);
+ for(int i = 0; i< song.bufferSize() - 1; i++){
+  line(i-width/2, song.left.get(i)*60-250, i-width/2,  song.left.get(i+1)*70-250); 
+  line(i-width/2, 250+song.right.get(i)*60, i-width/2, 250+ song.right.get(i+1)*70); 
+ }
+  
+}
+////////////////////////////////////////////////classes///////////////////////////////////////////
+void stop(){
+  // always close when you are finished with them
+  song.close();
+  // always stop before exiting
+  minim.stop();
+  // this closes the sketch
+  super.stop();
+}
+
+//fuzz animation
+void plotDot(float r, float theta)
+{
+  float x = r * cos(theta);
+  float y = r * sin(theta);
+  point(x, y);
+}
+
+//big dot animation
+void circle(float theta, float distance, float radius)
+{
+  ellipseMode(CENTER);
+  ellipse(distance * cos(theta), distance * sin(theta), radius * 2, radius * 2);
+}
+
+void circleToCenter(float theta, float distance, float maxDistance, float maxRadius, boolean opposite)
+{
+  if (distance < 5) {
+    return;
+  }
+  
+  float offset = opposite ? -radians(t / 4.0) : radians(t / 4);
+  float radius = maxRadius * distance / maxDistance;
+  circle(theta + offset, distance, radius);
+  circleToCenter(theta, distance - 2 * radius - 3, maxDistance, maxRadius, !opposite);
+}
+
+void symmetrizedDotPattern(float[] samples, int length)
+{
+  // various tweakable parameters
+  float top = width/5 ;
+  float angle = 20;
+  int lag = 32;
+  
+  // find the high and low values
+  float high = -1e10, low = 1e10;
+  for (int i = 0; i < length; i++) {
+    high = max(high, samples[i]);
+    low = min(low, samples[i]);
+  }
+  
+  // rescale the samples to [0, top]
+  float[] buffer = new float[length];
+  for (int i = 0; i < length; i++) {
+    buffer[i] = (samples[i] - low) * top / (high - low);
+  }
+  
+  for (int j = 0; j < length - lag; j++) {
+    if (buffer[j+lag] - buffer[j] >= 0) {
+      stroke(primaryColor, 100, 100);
+    } else {
+      stroke(secondColor, 100, 100);
+    }
+    
+    for (float i = 1; i < 360; i += angle) {
+      plotDot(buffer[j], i+buffer[j+lag]);
+      plotDot(buffer[j], i-buffer[j+lag]);
+    }
+  }
+}
+/////////////////////////////////////////where the apparent magic happens///////////////////////////////
+class BeatListener implements AudioListener
+{
+  private BeatDetect beat;
+  private AudioPlayer source;
+  
+  BeatListener(BeatDetect beat, AudioPlayer source)
+  {
+    this.source = source;
+    this.source.addListener(this);
+    this.beat = beat;
+  }
+  
+  void samples(float[] samps)
+  {
+    beat.detect(source.mix);
+  }
+  
+  void samples(float[] sampsL, float[] sampsR)
+  {
+    beat.detect(source.mix);
+  }
+}
